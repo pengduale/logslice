@@ -1,59 +1,70 @@
-"""Output formatters for log matches."""
+"""Output formatting for matched log lines."""
 
 import json
-from datetime import datetime
-from typing import List
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Optional
 
 from logslice.filter import LogMatch
+from logslice.highlighter import HighlightConfig, LogHighlighter
 
 
-class OutputFormat:
+class OutputFormat(str, Enum):
     PLAIN = "plain"
     JSON = "json"
-    CSV = "csv"
+    COLOR = "color"
 
 
 class LogFormatter:
-    """Formats LogMatch results into various output formats."""
+    """Formats LogMatch objects for terminal or structured output."""
 
-    def __init__(self, fmt: str = OutputFormat.PLAIN, show_line_numbers: bool = True,
-                 show_source: bool = True, timestamp: bool = False):
-        if fmt not in (OutputFormat.PLAIN, OutputFormat.JSON, OutputFormat.CSV):
-            raise ValueError(f"Unsupported format: {fmt!r}")
+    def __init__(
+        self,
+        fmt: OutputFormat = OutputFormat.PLAIN,
+        show_line_numbers: bool = True,
+        show_source: bool = True,
+        highlight_config: Optional[HighlightConfig] = None,
+    ) -> None:
         self.fmt = fmt
         self.show_line_numbers = show_line_numbers
         self.show_source = show_source
-        self.timestamp = timestamp
+        self.highlighter = LogHighlighter(highlight_config or HighlightConfig())
 
     def _get_timestamp(self) -> str:
-        return datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     def format_match(self, match: LogMatch) -> str:
-        """Format a single LogMatch to a string."""
         if self.fmt == OutputFormat.JSON:
-            data = match.to_dict()
-            if self.timestamp:
-                data["formatted_at"] = self._get_timestamp()
-            return json.dumps(data)
+            return self._format_json(match)
+        if self.fmt == OutputFormat.COLOR:
+            return self._format_color(match)
+        return self._format_plain(match)
 
-        if self.fmt == OutputFormat.CSV:
-            source = match.source or ""
-            line = match.line.replace(",", "\\,").replace("\n", "")
-            return f"{match.line_number},{source},{line}"
-
-        # PLAIN
+    def _format_plain(self, match: LogMatch) -> str:
         parts = []
+        if self.show_source:
+            parts.append(f"[{match.source}]")
         if self.show_line_numbers:
-            parts.append(f"[{match.line_number}]")
-        if self.show_source and match.source:
-            parts.append(f"({match.source})")
-        parts.append(match.line.rstrip("\n"))
+            parts.append(f"{match.line_number}:")
+        parts.append(match.line)
         return " ".join(parts)
 
-    def format_matches(self, matches: List[LogMatch]) -> List[str]:
-        """Format a list of LogMatch objects."""
-        return [self.format_match(m) for m in matches]
+    def _format_color(self, match: LogMatch) -> str:
+        highlighted = self.highlighter.highlight_line(
+            match.line, pattern=match.matched_pattern
+        )
+        parts = []
+        if self.show_source:
+            parts.append(f"[{match.source}]")
+        if self.show_line_numbers:
+            parts.append(f"{match.line_number}:")
+        parts.append(highlighted)
+        return " ".join(parts)
 
-    def csv_header(self) -> str:
-        """Return the CSV header line."""
-        return "line_number,source,line"
+    def _format_json(self, match: LogMatch) -> str:
+        data = match.to_dict()
+        data["timestamp"] = self._get_timestamp()
+        return json.dumps(data)
+
+    def format_all(self, matches: list) -> list:
+        return [self.format_match(m) for m in matches]
