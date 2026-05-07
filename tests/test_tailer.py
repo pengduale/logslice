@@ -95,3 +95,18 @@ def test_tailer_follow_picks_up_new_lines():
         assert "appended line" in lines
     finally:
         os.unlink(path)
+
+
+def test_tailer_initial_lines_limits_output():
+    """Verify that initial_lines restricts how many trailing lines are returned."""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".log", delete=False) as f:
+        f.write("line one\nline two\nline three\nline four\nline five\n")
+        path = f.name
+    try:
+        tailer = make_tailer(path, initial_lines=3)
+        results = list(tailer.tail())
+        assert len(results) == 3
+        assert results[0].line == "line three"
+        assert results[2].line == "line five"
+    finally:
+        os.unlink(path)
