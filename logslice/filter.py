@@ -36,12 +36,15 @@ class LogFilter:
         self.config = config
         flags = 0 if config.case_sensitive else re.IGNORECASE
 
-        self._include = [
-            re.compile(p, flags) for p in config.patterns
-        ]
-        self._exclude = [
-            re.compile(p, flags) for p in config.exclude_patterns
-        ]
+        try:
+            self._include = [
+                re.compile(p, flags) for p in config.patterns
+            ]
+            self._exclude = [
+                re.compile(p, flags) for p in config.exclude_patterns
+            ]
+        except re.error as exc:
+            raise ValueError(f"Invalid regex pattern: {exc}") from exc
 
     def _is_excluded(self, line: str) -> bool:
         return any(rx.search(line) for rx in self._exclude)
