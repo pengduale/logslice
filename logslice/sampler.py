@@ -57,6 +57,11 @@ class LogSampler:
         self._emitted += 1
         return line
 
+    def reset(self) -> None:
+        """Reset sampler counters, allowing it to be reused for a new stream."""
+        self._seen = 0
+        self._emitted = 0
+
     def summary(self) -> str:
         """Return a human-readable sampling summary."""
         suppressed = self._seen - self._emitted
