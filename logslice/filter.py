@@ -1,79 +1,76 @@
-"""Core log filtering module with regex support for logslice."""
+"""Log line filtering with include/exclude regex patterns."""
+from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Iterator, List, Optional
+from typing import List, Optional, Dict, Any
 
 
 @dataclass
 class FilterConfig:
-    """Configuration for log filtering."""
-    patterns: List[str] = field(default_factory=list)
+    include_patterns: List[str] = field(default_factory=list)
     exclude_patterns: List[str] = field(default_factory=list)
-    case_sensitive: bool = False
-    max_lines: Optional[int] = None
+    ignore_case: bool = False
 
 
 @dataclass
 class LogMatch:
-    """Represents a matched log line with metadata."""
+    line: str
     line_number: int
-    content: str
-    matched_pattern: Optional[str] = None
+    source: str
+    matched_patterns: List[str] = field(default_factory=list)
+    context_tag: Optional[str] = None  # 'before', 'after', or None
 
-    def to_dict(self) -> dict:
-        return {
+    def to_dict(self) -> Dict[str, Any]:
+        d: Dict[str, Any] = {
             "line_number": self.line_number,
-            "content": self.content,
-            "matched_pattern": self.matched_pattern,
+            "source": self.source,
+            "line": self.line,
+            "matched_patterns": self.matched_patterns,
         }
+        if self.context_tag is not None:
+            d["context_tag"] = self.context_tag
+        return d
 
 
 class LogFilter:
-    """Filters log lines based on include/exclude regex patterns."""
+    def __init__(self, config: FilterConfig) -> None:
+        self._config = config
+        flags = re.IGNORECASE if config.ignore_case else 0
+        self._include = [
+            re.compile(p, flags) for p in config.include_patterns
+        ]
+        self._exclude = [
+            re.compile(p, flags) for p in config.exclude_patterns
+        ]
 
-    def __init__(self, config: FilterConfig):
-        self.config = config
-        flags = 0 if config.case_sensitive else re.IGNORECASE
+    @property
+    def config(self) -> FilterConfig:
+        return self._config
 
-        try:
-            self._include = [
-                re.compile(p, flags) for p in config.patterns
-            ]
-            self._exclude = [
-                re.compile(p, flags) for p in config.exclude_patterns
-            ]
-        except re.error as exc:
-            raise ValueError(f"Invalid regex pattern: {exc}") from exc
+    def match(self, line: str, line_number: int, source: str) -> Optional[LogMatch]:
+        """Return a LogMatch if the line passes all filters, else None."""
+        for exc in self._exclude:
+            if exc.search(line):
+                return None
 
-    def _is_excluded(self, line: str) -> bool:
-        return any(rx.search(line) for rx in self._exclude)
+        matched: List[str] = []
+        if self._include:
+            for inc in self._include:
+                if inc.search(line):
+                    matched.append(inc.pattern)
+            if not matched:
+                return None
+        else:
+            matched = []
 
-    def _match_pattern(self, line: str) -> Optional[str]:
-        """Return the first matching include pattern, or None."""
-        for rx in self._include:
-            if rx.search(line):
-                return rx.pattern
-        return None
+        return LogMatch(
+            line=line,
+            line_number=line_number,
+            source=source,
+            matched_patterns=matched,
+        )
 
-    def filter_lines(self, lines: Iterator[str]) -> Iterator[LogMatch]:
-        """Yield LogMatch objects for lines that pass the filter."""
-        count = 0
-        for line_number, raw_line in enumerate(lines, start=1):
-            if self.config.max_lines and count >= self.config.max_lines:
-                break
-
-            line = raw_line.rstrip("\n")
-
-            if self._is_excluded(line):
-                continue
-
-            if self._include:
-                matched = self._match_pattern(line)
-                if matched is None:
-                    continue
-            else:
-                matched = None
-
-            yield LogMatch(line_number=line_number, content=line, matched_pattern=matched)
-            count += 1
+    def is_excluded(self, line: str) -> bool:
+        """Return True if the line matches any exclude pattern."""
+        return any(exc.search(line) for exc in self._exclude)
