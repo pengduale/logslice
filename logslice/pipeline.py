@@ -1,66 +1,82 @@
-"""Pipeline that wires together filter, highlighter, formatter, and stats."""
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
-from typing import Iterable, Iterator, Optional
+from typing import Iterator, Optional
 
-from logslice.filter import FilterConfig, LogFilter, LogMatch
-from logslice.formatter import LogFormatter, OutputFormat
+from logslice.filter import FilterConfig, LogFilter
+from logslice.formatter import OutputFormat, LogFormatter
 from logslice.highlighter import HighlightConfig, LogHighlighter
 from logslice.stats import FilterStats
+from logslice.labeler import LabelerConfig, LabelRule, LogLabeler
 
 
 @dataclass
 class PipelineConfig:
-    """Aggregated configuration for the full processing pipeline."""
-
-    filter_config: FilterConfig = field(default_factory=FilterConfig)
+    include_patterns: list[str] = field(default_factory=list)
+    exclude_patterns: list[str] = field(default_factory=list)
     output_format: OutputFormat = OutputFormat.PLAIN
     show_line_numbers: bool = True
     show_source: bool = True
-    highlight_config: HighlightConfig = field(default_factory=HighlightConfig)
-    source_name: str = ""
+    highlight_pattern: Optional[str] = None
+    highlight_color: str = "red"
+    highlight_bold: bool = False
+    label_rules: list[tuple[str, str]] = field(default_factory=list)
+    default_label: Optional[str] = None
 
 
 class LogPipeline:
-    """Processes raw log lines through filter → highlight → format stages."""
+    """Orchestrates filter → label → format → highlight for a stream of lines."""
 
-    def __init__(self, config: PipelineConfig) -> None:
+    def __init__(self, config: PipelineConfig, source: str = "<input>") -> None:
         self._config = config
-        self._filter = LogFilter(config.filter_config)
-        self._highlighter = LogHighlighter(config.highlight_config)
+        self._source = source
+        self._stats = FilterStats()
+
+        self._filter = LogFilter(
+            FilterConfig(
+                include_patterns=config.include_patterns,
+                exclude_patterns=config.exclude_patterns,
+            )
+        )
         self._formatter = LogFormatter(
-            fmt=config.output_format,
+            output_format=config.output_format,
             show_line_numbers=config.show_line_numbers,
             show_source=config.show_source,
         )
-        self.stats = FilterStats()
+        self._highlighter = LogHighlighter(
+            HighlightConfig(
+                pattern=config.highlight_pattern,
+                color=config.highlight_color,
+                bold=config.highlight_bold,
+                enabled=config.highlight_pattern is not None,
+            )
+        )
+        rules = [LabelRule(pat, lbl) for pat, lbl in config.label_rules]
+        self._labeler = LogLabeler(
+            LabelerConfig(
+                rules=rules,
+                enabled=bool(rules),
+                default_label=config.default_label,
+            )
+        )
 
-    # ------------------------------------------------------------------
-    def process(self, lines: Iterable[str]) -> Iterator[str]:
-        """Yield formatted output lines for every matched input line."""
-        for raw_line in lines:
-            line = raw_line.rstrip("\n")
-            match: Optional[LogMatch] = self._filter.check(line)
-            self.stats.record_line(match)
+    @property
+    def stats(self) -> FilterStats:
+        return self._stats
+
+    def process(self, lines: Iterator[str]) -> Iterator[str]:
+        for lineno, raw in enumerate(lines, start=1):
+            line = raw.rstrip("\n")
+            match = self._filter.match(line, source=self._source, line_number=lineno)
+            self._stats.record_line(matched=match is not None, excluded=False)
             if match is None:
                 continue
-            if self._config.source_name and not match.source:
-                match = LogMatch(
-                    line=match.line,
-                    line_number=match.line_number,
-                    source=self._config.source_name,
-                    matched_patterns=match.matched_patterns,
-                )
-            highlighted = self._highlighter.highlight_line(match.line)
-            display_match = LogMatch(
-                line=highlighted,
-                line_number=match.line_number,
-                source=match.source,
-                matched_patterns=match.matched_patterns,
-            )
-            yield self._formatter.format_match(display_match)
+            label = self._labeler.label_line(line)
+            if label:
+                match = match._replace(line=f"[{label}] {match.line}")
+            formatted = self._formatter.format_match(match)
+            yield self._highlighter.highlight_line(formatted)
 
     def finish(self) -> None:
-        """Signal that processing is complete (records end time in stats)."""
-        self.stats.finish()
+        self._stats.finish()
