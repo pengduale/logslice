@@ -69,6 +69,14 @@ def test_max_lines_limit():
     assert len(results) == 2
 
 
+def test_max_lines_with_pattern():
+    """max_lines should cap results even when a pattern matches more lines."""
+    lf = make_filter(patterns=[r"INFO"], max_lines=2)
+    results = list(lf.filter_lines(iter(SAMPLE_LINES)))
+    assert len(results) == 2
+    assert all("INFO" in r.content for r in results)
+
+
 def test_log_match_line_numbers():
     lf = make_filter(patterns=[r"ERROR"])
     results = list(lf.filter_lines(iter(SAMPLE_LINES)))
