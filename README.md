@@ -38,6 +38,12 @@ logslice tail /var/log/syslog --pattern "timeout" --lines 50
 logslice filter app.log --pattern "ERROR" --format json
 ```
 
+**Filter between a date range:**
+
+```bash
+logslice filter app.log --pattern "ERROR" --since "2024-01-01" --until "2024-01-31"
+```
+
 **Python API:**
 
 ```python
@@ -58,6 +64,8 @@ for entry in slicer.filter(pattern=r"ERROR\s+\d+"):
 | `--lines` | Number of lines to tail (default: 100) |
 | `--format` | Output format: `plain` or `json` (default: `plain`) |
 | `--ignore-case` | Case-insensitive matching |
+| `--since` | Only show log entries on or after this date (e.g. `2024-01-01`) |
+| `--until` | Only show log entries on or before this date (e.g. `2024-01-31`) |
 
 ---
 
