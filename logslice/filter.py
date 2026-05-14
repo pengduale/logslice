@@ -74,3 +74,13 @@ class LogFilter:
     def is_excluded(self, line: str) -> bool:
         """Return True if the line matches any exclude pattern."""
         return any(exc.search(line) for exc in self._exclude)
+
+    def is_included(self, line: str) -> bool:
+        """Return True if the line matches at least one include pattern.
+
+        If no include patterns are configured, every line is considered
+        included (i.e. this returns True for all input).
+        """
+        if not self._include:
+            return True
+        return any(inc.search(line) for inc in self._include)
