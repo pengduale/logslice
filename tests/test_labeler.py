@@ -1,3 +1,4 @@
+import re  # noqa: E402 – needed for the exception type above
 import pytest
 from logslice.labeler import LabelRule, LabelerConfig, LogLabeler
 
@@ -32,9 +33,6 @@ def test_label_rule_no_match_returns_false():
 def test_label_rule_invalid_pattern_raises():
     with pytest.raises(re.error):
         LabelRule(pattern=r"[", label="bad")
-
-
-import re  # noqa: E402 – needed for the exception type above
 
 
 # ---------------------------------------------------------------------------
@@ -98,6 +96,18 @@ def test_annotate_no_label_returns_line_unchanged():
     assert labeler.annotate(line) == line
 
 
+def test_annotate_empty_line_returns_empty():
+    """An empty line with no matching rules and no default should be returned unchanged."""
+    labeler = make_labeler(rules=[LabelRule(r"ERROR", "error")])
+    assert labeler.annotate("") == ""
+
+
+def test_annotate_empty_line_with_default_label():
+    """An empty line should still receive a label prefix when a default label is set."""
+    labeler = make_labeler(default_label="general")
+    assert labeler.annotate("") == "[general] "
+
+
 def test_config_property_returns_config():
-    labeler = make_labeler(default_label="x")
-    assert labeler.config.default_label == "x"
+    labeler = make_labeler(default_label="default")
+    assert labeler.config.default_label == "default"
