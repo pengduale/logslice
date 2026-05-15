@@ -44,6 +44,12 @@ logslice filter app.log --pattern "ERROR" --format json
 logslice filter app.log --pattern "ERROR" --since "2024-01-01" --until "2024-01-31"
 ```
 
+**Count matching lines without printing them:**
+
+```bash
+logslice filter app.log --pattern "ERROR" --count
+```
+
 **Python API:**
 
 ```python
@@ -66,6 +72,7 @@ for entry in slicer.filter(pattern=r"ERROR\s+\d+"):
 | `--ignore-case` | Case-insensitive matching |
 | `--since` | Only show log entries on or after this date (e.g. `2024-01-01`) |
 | `--until` | Only show log entries on or before this date (e.g. `2024-01-31`) |
+| `--count` | Print only the number of matching lines instead of the lines themselves |
 
 ---
 
